@@ -1,5 +1,6 @@
 {
   "name": "Copy of GPP - PLANNER - Gerador de Planos Pedagógicos",
   "description": "Uma ferramenta avançada para professores organizarem, sistematizarem e qualificarem seus planos de aula seguindo os padrões da BNCC e a Taxonomia de Bloom.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -4,15 +4,16 @@ export interface LessonPlan {
   content: string;
   context: string;
   learningObjectives: string[];
-  skills: string[]; // Novo campo para Habilidades BNCC/SESI
+  skills: string[]; // Habilidades BNCC/SESI
   methodology: string;
   development: {
     what: string;
     how: string;
   };
-  inclusionStrategies: string; // Novo campo para Adaptações Inclusivas
+  inclusionStrategies: string; // Adaptações Inclusivas / DUA
   learningEvidence: string;
   assessmentInstruments: string;
+  justification?: string; // Justificativa pedagógica interna do plano
 }
 
 export interface SavedLessonPlan extends LessonPlan {
@@ -26,3 +27,4 @@ export interface AppState {
   error: string | null;
   showHistory: boolean;
 }
+
