@@ -63,6 +63,19 @@ function classifyError(err: any): { status: number; clientMessage: string; error
   }
 
   if (
+    message.includes("model not found") ||
+    message.includes("model_not_found") ||
+    message.includes("model name") ||
+    (message.includes("not found") && message.includes("model"))
+  ) {
+    return {
+      status: 404,
+      clientMessage: "O modelo de IA especificado (gemini-3.5-flash) não foi encontrado ou não está disponível para esta chave de API.",
+      errorType: "MODEL_NOT_FOUND",
+    };
+  }
+
+  if (
     message.includes("api key") ||
     message.includes("invalid key") ||
     message.includes("unauthorized") ||
@@ -340,7 +353,7 @@ async function startServer() {
       return;
     }
 
-    const requestStartTime = new Date().toISOString();
+    const requestTime = new Date().toISOString();
     const startTimeMs = Date.now();
     const targetModel = "gemini-3.5-flash";
 
