@@ -3,6 +3,7 @@ import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
 import { HistoryDrawer } from "./components/HistoryDrawer";
 import { PlanResult } from "./components/PlanResult";
+import { SiteFeedback } from "./components/SiteFeedback";
 import { SavedLessonPlan, LessonPlan, GenerationRequest } from "./types";
 import { GeminiService } from "./services/geminiService";
 import { StorageService } from "./services/storageService";
@@ -395,6 +396,9 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {/* Site Feedback & Rating section requested by user */}
+            <SiteFeedback />
           </div>
 
           {/* Right panel: Active Result or Loading Placeholders */}
