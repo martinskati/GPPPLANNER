@@ -1,23 +1,19 @@
+import React from "react";
 
-import React from 'react';
-
-const Footer: React.FC = () => {
+export const Footer: React.FC = () => {
   return (
-    <footer className="bg-slate-100 border-t border-slate-200 py-8 no-print mt-auto">
-      <div className="container mx-auto px-4">
-        <div className="flex flex-col md:flex-row justify-between items-center text-center md:text-left space-y-4 md:space-y-0">
-          <div className="max-w-md">
-            <p className="text-xs text-slate-500 leading-relaxed italic">
-              "O professor é o autor do plano. A plataforma é uma ferramenta de mediação pedagógica, organização do pensamento e apoio ao ensino."
-            </p>
-          </div>
-          <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-            © 2024 Ferramenta de Apoio Docente • Padrão BNCC
-          </div>
+    <footer className="bg-slate-900 border-t border-slate-800 py-6 mt-12 text-slate-400 text-sm no-print" id="app-footer">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-2">
+        <p className="font-medium text-slate-300">
+          Planner Pedagógico Institucional v2.0
+        </p>
+        <p className="text-xs text-slate-500 max-w-2xl mx-auto">
+          Sistema profissional voltado ao planejamento reverso de aula alinhado às diretrizes da BNCC, Currículo Estruturante SESI e preceitos do Desenho Universal para Aprendizagem (DUA).
+        </p>
+        <div className="text-[11px] text-emerald-500/80 font-mono pt-2">
+          [Pedagogical VM Status: Operational]
         </div>
       </div>
     </footer>
   );
 };
-
-export default Footer;

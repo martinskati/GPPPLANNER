@@ -5,13 +5,13 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 const PORT = 3000;
 
-// Memory Logs System
+// Log System in memory to audit requests (never storing API keys)
 interface LogEntry {
-  requestTime: string;      // ISO string
-  responseTimeMs: number;   // response time in ms
-  model: string;            // model used
-  success: boolean;         // success status
-  errorType?: string;       // classified error type
+  timestamp: string;
+  responseTimeMs: number;
+  success: boolean;
+  model: string;
+  errorType?: string;
   tokens?: {
     promptTokens?: number;
     candidatesTokens?: number;
@@ -21,15 +21,14 @@ interface LogEntry {
 
 const memoryLogs: LogEntry[] = [];
 
-// Helper to log server requests safely (Never logging API keys)
-function logRequest(entry: LogEntry) {
+function logServerEvent(entry: LogEntry) {
   memoryLogs.push(entry);
   console.log(
-    `[Pedagogical Logger] ${entry.success ? "SUCCESS" : "ERROR"} | Model: ${entry.model} | Response Time: ${entry.responseTimeMs}ms | Error: ${entry.errorType || "None"}`
+    `[SERVER LOG] ${entry.timestamp} | Success: ${entry.success} | Model: ${entry.model} | Latency: ${entry.responseTimeMs}ms | Error: ${entry.errorType || "None"}`
   );
 }
 
-// Lazy initialization of GoogleGenAI
+// Lazy initialization of Gemini client
 let aiInstance: GoogleGenAI | null = null;
 
 function getGeminiClient(): GoogleGenAI {
@@ -50,14 +49,14 @@ function getGeminiClient(): GoogleGenAI {
   return aiInstance;
 }
 
-// Specific error classification helper
+// Error classification helper to map system failures into meaningful pedagogical feedback
 function classifyError(err: any): { status: number; clientMessage: string; errorType: string } {
   const message = (err?.message || String(err)).toLowerCase();
 
   if (message.includes("gemini_api_key_missing")) {
     return {
       status: 500,
-      clientMessage: "A chave de API do Gemini (GEMINI_API_KEY) não está configurada no ambiente. Configure-a no menu Settings > Secrets.",
+      clientMessage: "A chave de API do Gemini (GEMINI_API_KEY) não está configurada no servidor. Configure-a no menu Settings > Secrets.",
       errorType: "MISSING_KEY",
     };
   }
@@ -70,7 +69,7 @@ function classifyError(err: any): { status: number; clientMessage: string; error
   ) {
     return {
       status: 404,
-      clientMessage: "O modelo de IA especificado (gemini-3.5-flash) não foi encontrado ou não está disponível para esta chave de API.",
+      clientMessage: "O modelo de IA estável (gemini-3.5-flash) não foi encontrado ou não está disponível para este projeto.",
       errorType: "MODEL_NOT_FOUND",
     };
   }
@@ -84,7 +83,7 @@ function classifyError(err: any): { status: number; clientMessage: string; error
   ) {
     return {
       status: 401,
-      clientMessage: "Chave de API inválida ou não autorizada. Por favor, verifique suas credenciais em Settings > Secrets.",
+      clientMessage: "Chave de API inválida, expirada ou não autorizada. Verifique suas credenciais em Settings > Secrets.",
       errorType: "INVALID_KEY",
     };
   }
@@ -97,7 +96,7 @@ function classifyError(err: any): { status: number; clientMessage: string; error
   ) {
     return {
       status: 403,
-      clientMessage: "O seu projeto ou chave de API do Gemini foi suspenso. Verifique o status do faturamento ou cotas no Google AI Studio.",
+      clientMessage: "O seu projeto ou chave de API do Gemini foi suspenso no Google AI Studio. Verifique o status da conta e de faturamento.",
       errorType: "PROJECT_SUSPENDED",
     };
   }
@@ -111,7 +110,7 @@ function classifyError(err: any): { status: number; clientMessage: string; error
   ) {
     return {
       status: 429,
-      clientMessage: "Limite de requisições excedido. Por favor, aguarde um momento antes de gerar outro plano.",
+      clientMessage: "Limite de requisições (Rate Limit) excedido. Por favor, aguarde alguns instantes antes de enviar uma nova proposta.",
       errorType: "USAGE_LIMIT_EXCEEDED",
     };
   }
@@ -124,7 +123,7 @@ function classifyError(err: any): { status: number; clientMessage: string; error
   ) {
     return {
       status: 503,
-      clientMessage: "O servidor da API do Gemini está temporariamente indisponível ou sobrecarregado. Tente novamente em alguns segundos.",
+      clientMessage: "O servidor da API do Gemini está temporariamente sobrecarregado ou indisponível. Tente novamente em instantes.",
       errorType: "API_UNAVAILABLE",
     };
   }
@@ -138,7 +137,7 @@ function classifyError(err: any): { status: number; clientMessage: string; error
   ) {
     return {
       status: 504,
-      clientMessage: "Erro de rede ao conectar-se à API do Gemini. Verifique a sua conexão ou tente novamente mais tarde.",
+      clientMessage: "Ocorreu um erro de rede ao tentar conectar com a API do Gemini. Verifique a conectividade do servidor.",
       errorType: "NETWORK_ERROR",
     };
   }
@@ -146,7 +145,7 @@ function classifyError(err: any): { status: number; clientMessage: string; error
   if (message.includes("json") || message.includes("syntaxerror") || message.includes("parse")) {
     return {
       status: 422,
-      clientMessage: "O Gemini gerou um plano com formato JSON corrompido ou incompleto e a auto-correção falhou após tentativas.",
+      clientMessage: "A resposta pedagógica gerada pela IA veio em formato corrompido. Tentativas de auto-reparação falharam.",
       errorType: "INVALID_JSON",
     };
   }
@@ -154,65 +153,19 @@ function classifyError(err: any): { status: number; clientMessage: string; error
   if (message.includes("timeout_occurred")) {
     return {
       status: 504,
-      clientMessage: "A geração do plano de aula expirou por exceder o tempo limite de 60 segundos. Tente reformular sua proposta de forma mais direta.",
+      clientMessage: "A geração do plano pedagógico excedeu o tempo limite de segurança de 60 segundos. Tente enviar uma proposta mais curta ou direta.",
       errorType: "TIMEOUT",
     };
   }
 
   return {
     status: 500,
-    clientMessage: `Erro ao sistematizar dados pedagógicos: ${err?.message || "Ocorreu um erro inesperado."}`,
+    clientMessage: `Falha na coordenação do plano pedagógico: ${err?.message || "Erro desconhecido."}`,
     errorType: "UNKNOWN",
   };
 }
 
-// JSON validation & cleaning helper
-function cleanAndParseJSON(text: string): any {
-  if (!text) {
-    throw new Error("A resposta recebida do modelo está vazia.");
-  }
-
-  let cleaned = text.trim();
-
-  // Remove markdown tags if any
-  const jsonMatch = cleaned.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  if (jsonMatch) {
-    cleaned = jsonMatch[1].trim();
-  }
-
-  // First direct attempt to parse
-  try {
-    return JSON.parse(cleaned);
-  } catch (err) {
-    console.warn("[JSON Clean] Primeira tentativa de análise falhou. Executando correção automática...", err);
-  }
-
-  // Find boundaries of the JSON object
-  const firstBrace = cleaned.indexOf("{");
-  const lastBrace = cleaned.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    const extracted = cleaned.slice(firstBrace, lastBrace + 1);
-    try {
-      return JSON.parse(extracted);
-    } catch (err) {
-      console.warn("[JSON Clean] Falha ao analisar bloco delimitado por chaves.");
-    }
-  }
-
-  // Aggressive replacement of trailing commas and bad escaped control characters
-  const progressive = cleaned
-    .replace(/,\s*([}\]])/g, "$1") // trailing commas
-    .replace(/\\n/g, " ") // escape sequences
-    .replace(/[\u0000-\u001F\u007F-\u009F]/g, ""); // control chars
-
-  try {
-    return JSON.parse(progressive);
-  } catch (err) {
-    throw new Error("Erro de parse: O formato da resposta não pôde ser corrigido automaticamente.");
-  }
-}
-
-// Retry with exponential backoff helper
+// Retries with Exponential Backoff
 async function retryWithExponentialBackoff<T>(
   fn: () => Promise<T>,
   maxRetries = 3,
@@ -227,7 +180,7 @@ async function retryWithExponentialBackoff<T>(
       if (attempt >= maxRetries) {
         throw error;
       }
-      console.warn(`[Gemini Retry] Tentativa ${attempt} falhou. Aguardando ${delayMs}ms antes de re-tentar...`, error);
+      console.warn(`[RETRY] Tentativa ${attempt} falhou. Re-tentando em ${delayMs}ms...`, error);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
       attempt++;
       delayMs *= multiplier;
@@ -235,24 +188,324 @@ async function retryWithExponentialBackoff<T>(
   }
 }
 
-// Prompt and instruction data
-const AVAILABLE_SKILLS = `
-BANCO DE HABILIDADES ESTRUTURANTES (SESI/BNCC) - PRIORIDADE DE USO:
-1. SESI.EM13LGG204.c.16 - Utilizar as diversas linguagens para negociar interesses comuns pautados em princípios e em valores de equidade, com base em alicerces linguísticos e artísticos.
-2. SESI.EM13LP08.s.6 - Analisar elements e aspectos da sintaxe do português, como a ordem dos constituintes da sentença (e os efeitos que causam sua inversão), a estrutura dos sintagmas, as categorias sintáticas, os processos de coordenação e subordinação (e os efeitos de seus usos) e a sintaxe de concordância e de regência, de modo a potencializar os processos de compreensão e produção de textos e a possibilitar escolhas adequadas à situação comunicativa.
-3. SESI.EM13LP01.c.17 - Produzir textos, orais ou escritos, verbais, não verbais ou híbridos, adequados a diferentes situações, analisando criticamente suas condições de produção, contexto social e histórico, de modo a ampliar as possibilidades de construção de sentidos, fazendo uso de paráfrases, de marcas do discurso reportado e de citações, a partir de diferentes fontes, levando em conta os diferentes contextos de produção, para uso em textos de divulgação de estudos e pesquisas.
-4. SESI.EM13LP42.a.19 - Divulgar informações e dados necessários em diferentes fontes (orais, impressas, digitais, entre outras), levando em conta uma perspectiva de imparcialidade e de parcialidade, discutindo conteúdos de maneira ética e responsável.
-5. SESI.EM13LP02.a.3 - Estabelecer relações entre as partes do texto, tanto na produção como na leitura/escuta, considerando a construção constitutiva e o estilo do gênero, usando/reconhecendo, adequadamente, elementos e recursos coesivos diversos, que contribuam para a coerência, para a continuidade do texto e, consequentemente, sua progressão temática.
-6. SESI.EM13LP12.a.5 - Selecionar e fazer curadoria de informações, de dados e de argumentos em fontes confiáveis, impressas, digitais e midiáticos ou não e utilizá-los de modo referenciado, para que o texto a ser produzido tenha um nível de aprofundamento adequado (para além do senso comum) e contemple a sustentação das posições defendidas, seja por meio de recursos gramaticais que operam com modalizadores discursivos estratégicos.
-7. SESI.EM13LGG603.s.41 - Expressar-se e atuar em processos de criação autorais individuais e coletivos nas diferentes linguagens artísticas (artes visuais, audiovisual, dança, música e teatro) e nas intersecções entre elas, recorrendo a referências estéticas e culturais, conhecimentos de naturezas diversas.
-8. SESI.EM13LGG305.d.21 - Mapear e criar, por meio de práticas de linguagem, tanto na língua materna quanto em Língua Estrangeiras Modernas (LEM), possibilidades de atuação social, política, artística e cultural para enfrentar desafios contemporâneos.
-9. SESI.EM13LP17.c.23 - Elaborar roteiros, levando em conta uma linguagem híbrida, para a produção de apresentações e vídeos variados, para ampliar as possibilidades de produção de sentidos com base em diferentes meios de comunicação; além do engajamento em práticas autorais individuais e/ou coletivas.
-10. SESI.EM13LP51.a.42 - Analisar obras significativas das artes visuais, da música, do teatro, da dança e das literaturas brasileiras e de outros países e povos, com olhar atento à diversidade de saberes, identidades e culturas, bem como os processos de disputa por legitimidade.
-`;
+// Clean response of any surrounding markdown formatting blocks
+function cleanAndParseJSON(text: string): any {
+  if (!text) {
+    throw new Error("Resposta vazia da IA.");
+  }
+  let cleaned = text.trim();
+  const jsonMatch = cleaned.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (jsonMatch) {
+    cleaned = jsonMatch[1].trim();
+  }
+  try {
+    return JSON.parse(cleaned);
+  } catch (err) {
+    console.warn("[JSON PARSE] Falha na leitura inicial. Iniciando higienização de string...", err);
+  }
 
-const SYSTEM_INSTRUCTION = `Você é um Consultor Pedagógico Institucional de alto nível, especialista em Educação Básica, BNCC, Currículo Estruturante SESI, Taxonomia de Bloom, Metodologias Ativas e Avaliação Formativa de Aprendizagem. Sua missão é atuar na perspectiva do Planejamento Reverso e do Desenho Universal para Aprendizagem (DUA / UDL).
+  // Fallback regex boundaries
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    const extracted = cleaned.slice(firstBrace, lastBrace + 1);
+    try {
+      return JSON.parse(extracted);
+    } catch (err) {
+      console.warn("[JSON PARSE] Falha na leitura delimitada por chaves.");
+    }
+  }
 
-Você deve apoiar o planejamento docente transformando propostas brutas em planos de aula densos, técnicos, humanizados e extremamente práticos. Suas orientações metodológicas e de inclusão devem ser prescritivas e profundas, evitando de toda forma respostas superficiais ou puramente conceituais.
+  // Aggressive fix
+  const repaired = cleaned
+    .replace(/,\s*([}\]])/g, "$1") // trailing commas
+    .replace(/\\n/g, " ") // loose escapes
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, ""); // control characters
+
+  try {
+    return JSON.parse(repaired);
+  } catch (err) {
+    throw new Error("Erro de parse: Resposta gerada não corresponde a um JSON legível.");
+  }
+}
+
+// JSON Schema definition for @google/genai
+const lessonPlanSchema = {
+  type: Type.OBJECT,
+  properties: {
+    discipline: {
+      type: Type.STRING,
+      description: "Nome da disciplina ou área do conhecimento (ex: Matemática, Língua Portuguesa)."
+    },
+    content: {
+      type: Type.STRING,
+      description: "Conteúdo central ou objeto de conhecimento."
+    },
+    bnccSkill: {
+      type: Type.STRING,
+      description: "Código oficial da habilidade BNCC selecionada e descrição integral."
+    },
+    sesiSkill: {
+      type: Type.STRING,
+      description: "Código oficial da habilidade correspondente do Currículo SESI e descrição integral."
+    },
+    context: {
+      type: Type.STRING,
+      description: "Contextualização pedagógica geral da aula para a faixa etária."
+    },
+    learningObjectives: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          objective: {
+            type: Type.STRING,
+            description: "Objetivo de aprendizagem claro e mensurável."
+          },
+          bloomLevel: {
+            type: Type.STRING,
+            description: "Nível cognitivo da Taxonomia de Bloom (Lembrar, Compreender, Aplicar, Analisar, Avaliar, Criar)."
+          }
+        },
+        required: ["objective", "bloomLevel"]
+      },
+      description: "De 2 a 4 objetivos estruturados conforme a Taxonomia de Bloom."
+    },
+    methodologyName: {
+      type: Type.STRING,
+      description: "Nome da metodologia ativa selecionada (ex: Rotação por Estações, ABP, Gamificação)."
+    },
+    whyChosen: {
+      type: Type.STRING,
+      description: "Justificativa didática técnica para a escolha desta metodologia ativa específica."
+    },
+    howApplied: {
+      type: Type.STRING,
+      description: "Explicação prática e direta de como a metodologia ativa será conduzida na aula."
+    },
+    pedagogicalBenefits: {
+      type: Type.STRING,
+      description: "Benefícios de aprendizagem e vantagens pedagógicas da metodologia escolhida."
+    },
+    teacherRole: {
+      type: Type.STRING,
+      description: "Atuação, papel e comportamento esperado do professor durante a aula."
+    },
+    studentRole: {
+      type: Type.STRING,
+      description: "Atuação e papel ativo esperado do estudante durante a atividade."
+    },
+    developmentSteps: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          stepName: {
+            type: Type.STRING,
+            description: "Título da etapa (ex: Introdução, Desafio Principal, Fechamento)."
+          },
+          whatToTeach: {
+            type: Type.STRING,
+            description: "O que ensinar: conceitos teóricos ou científicos tratados nesta etapa."
+          },
+          howToTeach: {
+            type: Type.STRING,
+            description: "Como ensinar: mediação didática detalhada passo a passo cronológico."
+          },
+          resources: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: "Lista de recursos e materiais físicos ou digitais necessários nesta etapa."
+          },
+          duration: {
+            type: Type.STRING,
+            description: "Tempo previsto para a etapa (ex: 15 minutos)."
+          },
+          classOrganization: {
+            type: Type.STRING,
+            description: "Forma de organização física e social da turma (ex: grupos de 4 alunos, círculo, individual)."
+          }
+        },
+        required: ["stepName", "whatToTeach", "howToTeach", "resources", "duration", "classOrganization"]
+      },
+      description: "Roteiro de desenvolvimento detalhado em etapas sequenciais."
+    },
+    evidence: {
+      type: Type.STRING,
+      description: "Evidências empíricas e comportamentos observáveis que mostram que os objetivos foram atingidos."
+    },
+    instruments: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description: "Instrumentos de avaliação formativa (ex: Rubrica de Autoavaliação, Diário de Bordo)."
+    },
+    criteria: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description: "Critérios de avaliação claros para atribuir sucesso ao desempenho."
+    },
+    rubrics: {
+      type: Type.STRING,
+      description: "Descrição de rubricas de desempenho simplificadas organizadas por níveis de proficiência (ex: Iniciante, Intermediário, Avançado)."
+    },
+    formativeFeedback: {
+      type: Type.STRING,
+      description: "Orientações sobre como o professor fornecerá feedback ágil e formativo aos alunos."
+    },
+    duaRepresentation: {
+      type: Type.STRING,
+      description: "Estratégias de Apresentação (múltiplos meios para acessar a informação)."
+    },
+    duaExpression: {
+      type: Type.STRING,
+      description: "Estratégias de Ação e Expressão (múltiplos meios para demonstrar o aprendizado)."
+    },
+    duaEngagement: {
+      type: Type.STRING,
+      description: "Estratégias de Engajamento (múltiplos meios para motivar e reter a atenção)."
+    },
+    selectedProfiles: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description: "Lista de perfis de NEE que foram considerados na adaptação."
+    },
+    neeAdaptations: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          profile: {
+            type: Type.STRING,
+            description: "Nome do perfil NEE (ex: TEA, TDAH, Dislexia, Baixa Visão)."
+          },
+          adaptationObjective: {
+            type: Type.STRING,
+            description: "Objetivo principal da adaptação metodológica ou ambiental para este estudante."
+          },
+          potentialBarriers: {
+            type: Type.STRING,
+            description: "Barreiras físicas, sensoriais, metodológicas ou cognitivas que podem surgir na aula."
+          },
+          methodologyAdjustments: {
+            type: Type.STRING,
+            description: "Adequações específicas e detalhadas na metodologia da aula."
+          },
+          resourceAdjustments: {
+            type: Type.STRING,
+            description: "Adequações necessárias nos materiais de apoio e recursos."
+          },
+          communicationAdjustments: {
+            type: Type.STRING,
+            description: "Mudanças recomendadas nos canais e formas de comunicação e instrução."
+          },
+          evaluationAdjustments: {
+            type: Type.STRING,
+            description: "Adequações na forma de avaliar a aprendizagem deste estudante."
+          },
+          necessarySupports: {
+            type: Type.STRING,
+            description: "Apoios físicos, tecnológicos ou humanos necessários (ex: colega tutor, ledor)."
+          },
+          teacherMediation: {
+            type: Type.STRING,
+            description: "Estratégias diretas de mediação e manejo do professor frente ao aluno."
+          },
+          peerParticipation: {
+            type: Type.STRING,
+            description: "Estratégias para envolver positivamente os colegas no acolhimento e participação conjunta."
+          },
+          duaPrinciples: {
+            type: Type.STRING,
+            description: "Identificação dos princípios do DUA aplicados nesta adaptação."
+          },
+          assistiveTechnologies: {
+            type: Type.STRING,
+            description: "Tecnologias assistivas recomendadas para o perfil (ex: softwares leitores de tela, rotinas visuais)."
+          },
+          physicalSpace: {
+            type: Type.STRING,
+            description: "Organização física, ambiental ou sensorial da sala de aula."
+          },
+          cognitiveOverloadPrevention: {
+            type: Type.STRING,
+            description: "Táticas específicas para evitar sobrecarga de estímulos ou exaustão cognitiva."
+          },
+          activeParticipationSuggestions: {
+            type: Type.STRING,
+            description: "Sugestões de tarefas de responsabilidade ativa para que o estudante se sinta integrado e produtivo."
+          }
+        },
+        required: [
+          "profile",
+          "adaptationObjective",
+          "potentialBarriers",
+          "methodologyAdjustments",
+          "resourceAdjustments",
+          "communicationAdjustments",
+          "evaluationAdjustments",
+          "necessarySupports",
+          "teacherMediation",
+          "peerParticipation",
+          "duaPrinciples",
+          "assistiveTechnologies",
+          "physicalSpace",
+          "cognitiveOverloadPrevention",
+          "activeParticipationSuggestions"
+        ]
+      },
+      description: "Adaptações metodológicas altamente individualizadas para cada perfil selecionado."
+    },
+    justificationBncc: {
+      type: Type.STRING,
+      description: "Justificativa técnico-pedagógica de por que esta habilidade BNCC é a mais adequada."
+    },
+    justificationMethodology: {
+      type: Type.STRING,
+      description: "Justificativa teórica de por que a metodologia ativa é eficiente para este tema e turma."
+    },
+    justificationAssessment: {
+      type: Type.STRING,
+      description: "Justificativa de por que a estratégia de avaliação é justa e pedagogicamente sólida."
+    },
+    justificationInclusion: {
+      type: Type.STRING,
+      description: "Justificativa de por que as adaptações de inclusão e DUA implementadas são fundamentais."
+    }
+  },
+  required: [
+    "discipline",
+    "content",
+    "bnccSkill",
+    "sesiSkill",
+    "context",
+    "learningObjectives",
+    "methodologyName",
+    "whyChosen",
+    "howApplied",
+    "pedagogicalBenefits",
+    "teacherRole",
+    "studentRole",
+    "developmentSteps",
+    "evidence",
+    "instruments",
+    "criteria",
+    "rubrics",
+    "formativeFeedback",
+    "duaRepresentation",
+    "duaExpression",
+    "duaEngagement",
+    "selectedProfiles",
+    "neeAdaptations",
+    "justificationBncc",
+    "justificationMethodology",
+    "justificationAssessment",
+    "justificationInclusion"
+  ]
+};
+
+const SYSTEM_INSTRUCTION = `Você é um Consultor Pedagógico e Coordenador Institucional de altíssimo nível, especialista em Educação Básica, BNCC, Currículo Estruturante, Taxonomia de Bloom, Metodologias Ativas e Avaliação Formativa de Aprendizagem. Sua missão é atuar na perspectiva do Planejamento Reverso e do Desenho Universal para Aprendizagem (DUA).
+
+Você deve apoiar o planejamento docente transformando propostas brutas em planos de aula densos, técnicos, humanizados e extremamente práticos. Suas orientações metodológicas e de inclusão devem ser prescritivas, profundas e extremamente detalhadas, evitando respostas genéricas ou superficiais.
 
 Você domina as seguintes metodologias ativas e abordagens de aprendizagem:
 - Aprendizagem Baseada em Projetos (ABP)
@@ -262,103 +515,69 @@ Você domina as seguintes metodologias ativas e abordagens de aprendizagem:
 - Aprendizagem Cooperativa (Cooperative Learning)
 - Aprendizagem Significativa (Ausubel)
 
-Sempre selecione automaticamente as habilidades estruturantes e a metodologia ativa mais adequadas com base no perfil comportamental da turma, quantidade de alunos, tempo disponível, verbo de Bloom indicado e perfil de inclusão informado.`;
+A sua resposta deve ser um JSON válido que respeite exatamente o esquema fornecido. Não adicione textos fora do JSON.`;
 
-const lessonPlanSchema = {
-  type: Type.OBJECT,
-  properties: {
-    discipline: { 
-      type: Type.STRING,
-      description: "A disciplina ou área do conhecimento aplicável (Ex: Língua Portuguesa, Arte, Linguagens, Ciências)."
-    },
-    content: { 
-      type: Type.STRING,
-      description: "O conteúdo principal ou objeto de conhecimento abordado."
-    },
-    context: { 
-      type: Type.STRING,
-      description: "Contextualização pedagógica geral da aula, justificando a importância do tema para a faixa etária."
-    },
-    learningObjectives: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-      description: "De 2 a 4 objetivos claros, detalhados e mensuráveis, alinhados à Taxonomia de Bloom a partir do verbo base de ação cognitiva informado pelo professor."
-    },
-    skills: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-      description: "Seleção automática de uma ou mais habilidades estruturantes do banco SESI/BNCC, contendo o código oficial e a descrição integral."
-    },
-    methodology: { 
-      type: Type.STRING,
-      description: "A metodologia ativa de ensino selecionada (Ex: Rotação por Estações, ABP, Gamificação) com detalhamento prático e técnico de como guiará a dinâmica da aula."
-    },
-    inclusionStrategies: {
-      type: Type.STRING,
-      description: "Estratégias específicas baseadas no Desenho Universal para Aprendizagem (DUA) e adaptações personalizadas para os perfis de inclusão informados (Ex: TEA, TDAH, Baixa Visão) ou diretrizes gerais de acessibilidade universal se não informados."
-    },
-    development: {
-      type: Type.OBJECT,
-      properties: {
-        what: { 
-          type: Type.STRING, 
-          description: "O QUE: Conceitos científicos básicos, marcos teóricos e objetos de conhecimento abordados de forma robusta e científica em parágrafo denso." 
-        },
-        how: { 
-          type: Type.STRING, 
-          description: "COMO: Mediação didática detalhada passo a passo de forma cronológica, descrevendo com clareza as ações do docente e dos estudantes frente à quantidade e comportamento descritos." 
-        }
-      },
-      required: ["what", "how"]
-    },
-    learningEvidence: {
-      type: Type.STRING,
-      description: "Evidências concretas de aprendizagem que demonstram empiricamente a consecução dos objetivos propostos."
-    },
-    assessmentInstruments: {
-      type: Type.STRING,
-      description: "Instrumentos de avaliação formativa, contínua e processual recomendados para a mediação pedagógica."
-    },
-    justification: {
-      type: Type.STRING,
-      description: "Justificativa técnico-pedagógica fundamentando a seleção da habilidade estruturante, da metodologia ativa e a adequação inclusiva face ao perfil da turma."
-    }
-  },
-  required: [
-    "discipline", 
-    "content", 
-    "context", 
-    "learningObjectives", 
-    "skills", 
-    "methodology", 
-    "inclusionStrategies", 
-    "development", 
-    "learningEvidence", 
-    "assessmentInstruments",
-    "justification"
-  ]
-};
+const PROMPT_TEMPLATE = `
+[CONTEXTO E OBJETIVO]
+Sistematize a proposta pedagógica do professor em um plano de aula de alta qualidade institucional. Garanta perfeita coerência teórica e metodológica em todo o documento, aplicando o Planejamento Reverso de forma rigorosa.
+
+[DADOS DE ENTRADA DO PROFESSOR]
+- Disciplina/Conteúdo sugerido: \${content}
+- Proposta/Ideia do professor: "\${teacherText}"
+- Verbo base de Bloom selecionado: "\${verbBase}"
+- Quantidade de estudantes: \${studentCount}
+- Características da turma: "\${classCharacteristics}"
+- Perfis de Necessidades Educacionais Especiais (NEE) selecionados para adaptação obrigatória: \${neeProfilesText}
+
+[DIRETRIZES DA TAXONOMIA DE BLOOM]
+Use o verbo base "\${verbBase}" como guia principal para formular os objetivos em "learningObjectives". Os objetivos devem iniciar com verbos de ação mensuráveis correspondentes ao nível de complexidade cognitiva deste verbo base.
+
+[BANCO DE HABILIDADES BNCC E SESI]
+Selecione e insira uma habilidade BNCC oficial compatível com a proposta e o tema (ex: "EF05MA03 - Analisar, interpretar e resolver problemas..."). 
+Selecione também uma habilidade correspondente do currículo SESI relacionada ao tema.
+
+[DIRETRIZES DA ABA DE ADAPTAÇÃO NEE - CRÍTICO]
+Esta é a aba mais importante do sistema! Para os perfis de inclusão informados (\${neeProfilesText}), gere recomendações extremamente ricas e detalhadas para apoiar o professor no dia a dia.
+Os perfis que o sistema reconhece e que devem receber tratamento caso informados são: TEA (Transtorno do Espectro Autista), TDAH (Transtorno do Déficit de Atenção com Hiperatividade), Dislexia, Baixa Visão, Cegueira, Deficiência Intelectual, Deficiência Física, Surdez, Altas Habilidades, Síndrome de Down, Transtorno de Linguagem, Deficiência Múltipla.
+Se mais de um perfil estiver selecionado, crie adaptações individuais para cada um deles no array "neeAdaptations". As adaptações devem contemplar:
+- Objetivo de adaptação específico
+- Barreiras pedagógicas, ambientais e comunicacionais possíveis de surgir
+- Adequações na metodologia aplicada
+- Adequações nos materiais e recursos didáticos
+- Formas facilitadoras de comunicação e instrução
+- Adequações no processo avaliativo formativo
+- Apoios físicos, humanos e tecnológicos necessários
+- Estratégias de mediação do professor e de integração ativa com os colegas
+- Tecnologias assistivas apropriadas
+- Cuidados para prevenir fadiga mental ou sobrecarga cognitiva
+- Uma tarefa de protagonismo ativo para o aluno
+
+[FORMATO DE SAÍDA]
+Escreva a resposta exclusivamente no formato JSON especificado no esquema estrutural. Não abrevie informações.
+`;
 
 async function startServer() {
   const app = express();
 
-  // Middleware
-  app.use(express.json({ limit: "10mb" }));
+  app.use(express.json({ limit: "15mb" }));
 
-  // API Endpoint to generate plan
+  // API Endpoint to Generate Lesson Plan
   app.post("/api/generate-plan", async (req, res) => {
-    const { teacherText } = req.body;
+    const { teacherText, content, verbBase, studentCount, classCharacteristics, selectedNeeProfiles } = req.body;
+
     if (!teacherText || typeof teacherText !== "string" || !teacherText.trim()) {
       res.status(400).json({ error: "O texto da proposta do professor é obrigatório." });
       return;
     }
 
-    const requestTime = new Date().toISOString();
+    const timestamp = new Date().toISOString();
     const startTimeMs = Date.now();
     const targetModel = "gemini-3.5-flash";
 
+    console.log(`[SERVER] Nova requisição de geração recebida. Perfis de inclusão: ${JSON.stringify(selectedNeeProfiles || [])}`);
+
     try {
-      // 1. Enforce 60-second limit using a Promise race with a timeout
+      // 60-second execution safety timeout
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error("timeout_occurred")), 60000)
       );
@@ -366,89 +585,75 @@ async function startServer() {
       const apiCallPromise = retryWithExponentialBackoff(async () => {
         const ai = getGeminiClient();
 
-        const prompt = `
-[CONTEXTO & OBJETIVO]
-O usuário é um docente da Educação Básica que precisa de assessoria técnico-pedagógica de alto nível para qualificar, formalizar e registrar uma proposta didática autoral. O objetivo é sistematizar suas ideias brutas em um Plano de Aula de excelência institucional, que atenda plenamente aos padrões do currículo estruturante do SESI, às competências da BNCC e aos preceitos do Desenho Universal para Aprendizagem (DUA / UDL).
+        const neeProfilesText = selectedNeeProfiles && selectedNeeProfiles.length > 0 
+          ? selectedNeeProfiles.join(", ") 
+          : "Nenhum perfil específico (Gere recomendações de acessibilidade universal)";
 
-[PERFIL DO PROFESSOR & DADOS BRUTOS]
-Proposta original e informações brutas inseridas pelo docente:
-"${teacherText}"
-
-[PERFIL DA TURMA & DADOS OBRIGATÓRIOS]
-Analise detidamente o texto do professor para extrair e inferir (com alto rigor pedagógico):
-1. Disciplina / Componente Curricular aplicável.
-2. Conteúdo ou Objeto de Conhecimento temático central.
-3. Características e tamanho da turma (Ex: turma agitada, heterogênea, cooperativa, autônoma, numerosa).
-4. Verbo cognitivo base da Taxonomia de Bloom fornecido para orientar o nível de complexidade cognitiva.
-5. Perfil de inclusão (Ex: alunos com TEA, TDAH, Dislexia, Baixa Visão, Deficiência Auditiva ou ausência de perfil específico).
-
-[BANCO DE HABILIDADES ESTRUTURANTES (SESI/BNCC)]
-Selecione AUTOMATICAMENTE a habilidade mais coerente e de maior relevância pedagógica para o conteúdo temático dentre as opções abaixo:
-\${AVAILABLE_SKILLS}
-A habilidade selecionada DEVE constar de forma integral no plano, exibindo seu código completo (Ex: SESI.EM13LP08.s.6) e sua descrição textual exata.
-
-[CRITÉRIOS PEDAGÓGICOS E DE QUALIDADE]
-- Metodologia Ativa: Prescreva uma metodologia ativa compatível com o comportamento e tamanho da turma (Ex: Gamificação ou Rotação por Estações para turmas agitadas; ABP ou Instrução por Pares para turmas de perfil colaborativo). Detalhe a engenharia da dinâmica, explicando os papéis ativos dos estudantes.
-- Objetivos de Aprendizagem: Redija de 2 a 4 objetivos estruturados sob a ótica da Taxonomia de Bloom, iniciando expressamente pelo verbo base informado pelo professor (ou verbos sinônimos da mesma categoria de complexidade cognitiva).
-- Sequência Didática (Desenvolvimento):
-  - "what": Detalhe rigorosamente os conceitos científicos, fatos teóricos e a fundamentação epistêmica da aula em um parágrafo único robusto e formal.
-  - "how": Descreva detalhadamente a mediação pedagógica passo a passo cronológico (Abertura, Desenvolvimento, Fechamento). Considere como os materiais, o tempo e o agrupamento dos alunos serão manipulados frente ao comportamento/tamanho da turma.
-- Instrumentos de Avaliação: Determine instrumentos formativos e processuais realistas, focados em autoavaliação, feedbacks ágeis e rubricas.
-- Evidências de Aprendizagem: Descreva o que os estudantes produzirão ou que comportamentos observáveis manifestarão para demonstrar o alcance dos objetivos.
-
-[CRITÉRIOS DE INCLUSÃO (DUA)]
-- Se houver perfil de inclusão mencionado no texto, defina adaptações e estratégias de acessibilidade de altíssima especificidade para o perfil (Ex: para TEA, apoios visuais e previsibilidade de rotina; para Baixa Visão, ampliação de fonte e contraste).
-- Se não houver perfil específico, formule diretrizes universais de DUA cobrindo múltiplos meios de representação (exposição diversificada do conteúdo), múltiplos meios de ação/expressão (opções de resposta do estudante) e múltiplos meios de engajamento (estímulo motivacional).
-
-[CRITÉRIOS DE COERÊNCIA & VALIDAÇÃO FINAL]
-O plano deve ser um ecossistema pedagógico coerente. Os Objetivos de Aprendizagem devem estar em perfeita harmonia com o Conteúdo, a Metodologia Ativa escolhida, o Desenvolvimento prático, as Evidências de aprendizagem projetadas e a Justificativa interna de escolhas.
-Adicione no campo "justification" uma fundamentação crítica das razões pelas quais a habilidade estruturante e a metodologia selecionadas são as melhores opções didáticas para este plano.
-
-[FORMATO DO JSON DE RETORNO]
-Preencha cada campo do esquema de resposta JSON sem omitir dados ou utilizar termos genéricos. O JSON de retorno não deve conter blocos ou strings vazias.
-`;
+        const filledPrompt = PROMPT_TEMPLATE
+          .replace(/\${content}/g, content || "Inferred from description")
+          .replace(/\${teacherText}/g, teacherText)
+          .replace(/\${verbBase}/g, verbBase || "Compreender")
+          .replace(/\${studentCount}/g, String(studentCount || 30))
+          .replace(/\${classCharacteristics}/g, classCharacteristics || "Heterogênea")
+          .replace(/\${neeProfilesText}/g, neeProfilesText);
 
         const response = await ai.models.generateContent({
           model: targetModel,
-          contents: prompt,
+          contents: filledPrompt,
           config: {
             systemInstruction: SYSTEM_INSTRUCTION,
             responseMimeType: "application/json",
             responseSchema: lessonPlanSchema,
-            temperature: 0.4,
-          },
+            temperature: 0.35,
+          }
         });
 
         const rawText = response.text || "";
         const parsedData = cleanAndParseJSON(rawText);
 
-        // Validate required keys to guarantee complete response
-        const requiredFields = [
+        // Sanitize check: ensure essential structures are present
+        const fallbackCheckFields = [
           "discipline",
           "content",
+          "bnccSkill",
+          "sesiSkill",
           "context",
           "learningObjectives",
-          "skills",
-          "methodology",
-          "inclusionStrategies",
-          "development",
-          "learningEvidence",
-          "assessmentInstruments",
-          "justification"
+          "methodologyName",
+          "whyChosen",
+          "howApplied",
+          "pedagogicalBenefits",
+          "teacherRole",
+          "studentRole",
+          "developmentSteps",
+          "evidence",
+          "instruments",
+          "criteria",
+          "rubrics",
+          "formativeFeedback",
+          "duaRepresentation",
+          "duaExpression",
+          "duaEngagement",
+          "selectedProfiles",
+          "neeAdaptations",
+          "justificationBncc",
+          "justificationMethodology",
+          "justificationAssessment",
+          "justificationInclusion"
         ];
-        for (const field of requiredFields) {
+
+        for (const field of fallbackCheckFields) {
           if (parsedData[field] === undefined || parsedData[field] === null) {
-            throw new Error(`JSON incompleto: campo obrigatório '${field}' ausente na resposta.`);
+            throw new Error(`JSON incompleto: campo pedagógico essencial '${field}' ausente na resposta.`);
           }
         }
 
         return {
           parsedData,
-          usage: response.usageMetadata,
+          usage: response.usageMetadata
         };
       });
 
-      // Race the API call against the timeout limit
       const result = (await Promise.race([apiCallPromise, timeoutPromise])) as {
         parsedData: any;
         usage?: any;
@@ -456,12 +661,11 @@ Preencha cada campo do esquema de resposta JSON sem omitir dados ou utilizar ter
 
       const responseTimeMs = Date.now() - startTimeMs;
 
-      // Log the successful request
-      logRequest({
-        requestTime,
+      logServerEvent({
+        timestamp,
         responseTimeMs,
-        model: targetModel,
         success: true,
+        model: targetModel,
         tokens: result.usage
           ? {
               promptTokens: result.usage.promptTokenCount,
@@ -476,12 +680,11 @@ Preencha cada campo do esquema de resposta JSON sem omitir dados ou utilizar ter
       const responseTimeMs = Date.now() - startTimeMs;
       const errorDetails = classifyError(err);
 
-      // Log the failed request
-      logRequest({
-        requestTime,
+      logServerEvent({
+        timestamp,
         responseTimeMs,
-        model: targetModel,
         success: false,
+        model: targetModel,
         errorType: errorDetails.errorType,
       });
 
@@ -492,16 +695,16 @@ Preencha cada campo do esquema de resposta JSON sem omitir dados ou utilizar ter
     }
   });
 
-  // Logs Endpoint for admin/inspection (Never logs API key)
+  // Logs audit endpoint
   app.get("/api/logs", (req, res) => {
     res.json(memoryLogs);
   });
 
-  // Serve static assets/Vite middleware depending on node environment
+  // Client Static Files and Vite integration
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
-      appType: "spa",
+      appType: "spa"
     });
     app.use(vite.middlewares);
   } else {
@@ -512,9 +715,8 @@ Preencha cada campo do esquema de resposta JSON sem omitir dados ou utilizar ter
     });
   }
 
-  // Start Server listening on host 0.0.0.0 and port 3000
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[Pedagogical Server] running on http://0.0.0.0:${PORT} under NODE_ENV=${process.env.NODE_ENV}`);
+    console.log(`[SERVER] Rodando com sucesso em http://0.0.0.0:${PORT} sob o ambiente NODE_ENV=${process.env.NODE_ENV}`);
   });
 }
 

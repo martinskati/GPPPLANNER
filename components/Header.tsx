@@ -1,42 +1,56 @@
-
-import React from 'react';
-import { GraduationCap, History } from 'lucide-react';
+import React from "react";
+import { BookOpen, HelpCircle, History } from "lucide-react";
 
 interface HeaderProps {
-  onOpenHistory?: () => void;
+  onShowHistory: () => void;
+  onShowGuide: () => void;
+  historyCount: number;
 }
 
-const Header: React.FC<HeaderProps> = ({ onOpenHistory }) => {
+export const Header: React.FC<HeaderProps> = ({ onShowHistory, onShowGuide, historyCount }) => {
   return (
-    <header className="bg-white/90 backdrop-blur-md border-b border-slate-200 sticky top-0 z-50 no-print">
-      <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+    <header className="bg-emerald-800 text-white shadow-md border-b border-emerald-950 no-print" id="app-header">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <div className="bg-emerald-800 p-2 rounded-lg shadow-md">
-            <GraduationCap className="text-white w-6 h-6" />
+          <div className="bg-emerald-100 p-2 rounded-lg text-emerald-800 shadow-inner flex items-center justify-center">
+            <BookOpen className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="font-bold text-slate-900 leading-none">Assistente Pedagógico</h1>
-            <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest">Institucional</span>
+            <h1 className="font-sans font-bold text-lg leading-tight tracking-tight sm:text-xl">
+              Planner Pedagógico Institucional
+            </h1>
+            <p className="text-xs text-emerald-200 font-medium">
+              Sistematização de Planos de Aula e Adaptações Metodológicas Integradas
+            </p>
           </div>
         </div>
-        
-        <div className="flex items-center space-x-4">
-          <button 
-            onClick={onOpenHistory}
-            className="flex items-center space-x-2 text-sm font-bold text-slate-600 hover:text-emerald-800 transition-colors px-3 py-2 rounded-lg hover:bg-emerald-50"
+
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={onShowGuide}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-emerald-100 hover:text-white hover:bg-emerald-700 transition font-medium text-sm border border-emerald-700/50"
+            title="Ver Guia de Preenchimento"
+            id="btn-show-guide"
           >
-            <History className="w-4 h-4" />
-            <span className="hidden md:inline">Banco de Planos</span>
+            <HelpCircle className="h-4 w-4" />
+            <span className="hidden sm:inline">Guia de Preenchimento</span>
           </button>
 
-          <nav className="hidden md:flex items-center space-x-4">
-            <div className="h-4 w-[1px] bg-slate-200"></div>
-            <span className="text-sm text-slate-400 font-bold">SISTEMA BNCC</span>
-          </nav>
+          <button
+            onClick={onShowHistory}
+            className="relative flex items-center space-x-1.5 px-3 py-1.5 rounded-md bg-emerald-700 hover:bg-emerald-600 active:bg-emerald-900 text-white transition font-medium text-sm shadow-sm border border-emerald-600"
+            id="btn-show-history"
+          >
+            <History className="h-4 w-4" />
+            <span>Meus Planos</span>
+            {historyCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full h-5 w-5 flex items-center justify-center animate-pulse border border-white">
+                {historyCount}
+              </span>
+            )}
+          </button>
         </div>
       </div>
     </header>
   );
 };
-
-export default Header;
